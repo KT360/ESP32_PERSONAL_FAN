@@ -1,6 +1,6 @@
 NOTE: ESP32 CODE -> Microcontroller Source (PlatformIO)
 
-
+REFERENCE: Used the code from here as an initial template: https://github.com/palmmaximilian/ReactNativeArduinoBLE
 
 
 
