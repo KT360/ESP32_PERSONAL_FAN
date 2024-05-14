@@ -1,118 +1,321 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
-import React from 'react';
-import type {PropsWithChildren} from 'react';
+import React, {useState} from 'react';
 import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
+  TouchableOpacity,
+  Button,
+  PermissionsAndroid,
   View,
+  Text,
 } from 'react-native';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+import base64 from 'react-native-base64';
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+import {BleManager, Device} from 'react-native-ble-plx';
+import {styles} from './Styles/styles';
+import {LogBox} from 'react-native';
+import VerticalSlider from 'react-native-vertical-slider-smartlife';
+
+LogBox.ignoreLogs(['new NativeEventEmitter']); // Ignore log notification by message
+LogBox.ignoreAllLogs(); //Ignore all log notifications
+
+const BLTManager = new BleManager();
+
+const SERVICE_UUID = 'f158a25a-f800-41af-9193-e80ef1a1d3e7';
+
+const MESSAGE_UUID = '7b8d3c84-0efa-405d-9f9d-6d1b73fea6d6';
+const RPM_UUID = 'dedf926b-600b-4dad-815a-1364e9dd0422';
+
+//TODO: COMMENTS
+
+export default function App() {
+  //Is a device connected?
+  const [isConnected, setIsConnected] = useState(false);
+
+  //What device is connected?
+  const [connectedDevice, setConnectedDevice] = useState<Device>();
+
+  //Data for sending and recieving
+  const [message, setMessage] = useState('Nothing Yet');
+  const [rpm, setRPM] = useState(0);
+
+  //To check if permissions have already been granted
+  const [is_permitted, setIsPermitted] = useState(false);
+
+  async function requestLocationPermission() {
+
+    try
+    {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        {
+          title: 'Permission Localisation Bluetooth',
+          message: 'Requirement for Bluetooth',
+          buttonNeutral: 'Later',
+          buttonNegative: 'Cancel',
+          buttonPositive: 'OK',
+        },
+      );
+  
+      if(granted === PermissionsAndroid.RESULTS.GRANTED)
+        {
+          console.log("Permissions Granted");
+          return true;
+        }else
+        {
+          console.log("Permissions Revoked");
+          return false;
+        }
+    }catch(err)
+    {
+      console.warn(err);
+      return false;
+    }
+  
+  } 
+  // Scans availbale BLT Devices and then call connectDevice
+  //Check for permissions and already existing devices
+  async function scanDevices() {
+
+    if(is_permitted == false)
+    {
+      const permission = await requestLocationPermission();
+      setIsPermitted(permission);
+    }
+
+    if(is_permitted)
+    {
+      if(connectedDevice)
+      {
+        connectDevice(connectedDevice!);
+      }else
+      {
+        console.log('scanning');
+
+        BLTManager.startDeviceScan(null, null, (error, scannedDevice) => {
+          if (error) {
+            console.warn(error);
+          }
+  
+          if (scannedDevice && scannedDevice.name == 'ESPFAN') {
+            BLTManager.stopDeviceScan();
+            connectDevice(scannedDevice);
+          }
+        });
+  
+        // stop scanning devices after 5 seconds
+        setTimeout(() => {
+          BLTManager.stopDeviceScan();
+        }, 5000);
+      }
+    }
+
+  }
+
+  // handle the device disconnection
+  async function disconnectDevice() {
+
+    console.log('Disconnecting start');
+
+    if (connectedDevice != null) {
+
+      const isDeviceConnected = await connectedDevice.isConnected();
+
+      if (isDeviceConnected) {
+
+        BLTManager.cancelTransaction('messagetransaction');
+        BLTManager.cancelTransaction('nightmodetransaction');
+
+        try
+        {
+          // Wait for the disconnection to complete before checking the connection status
+          BLTManager.cancelDeviceConnection(connectedDevice.id);
+
+          const connectionStatus = await connectedDevice.isConnected();
+          if (!connectionStatus) {
+
+            setIsConnected(false);
+            console.log('Disconnection completed');
+
+          }else
+          {
+            console.log('Device still connected');
+          }
+        } catch(error)
+        {
+          console.log('Error during disconnection: ', error);
+        }
+
+      }else
+      {
+        console.log('Device is already disconnected');
+      }
+    }
+  }
+
+  //Function to send data to ESP32
+  async function sendRPMValue(value: number) {
+    if(connectedDevice)
+    {
+      BLTManager.writeCharacteristicWithResponseForDevice(
+        connectedDevice.id,
+        SERVICE_UUID,
+        RPM_UUID,
+        base64.encode(value.toString()),
+      ).then(characteristic => {
+
+        console.log('RPM changed to :', base64.decode(characteristic.value || "No value"));
+
+      });
+    }
+  }
+  //Connect the device and start monitoring characteristics
+  async function connectDevice(device: Device) {
+
+    console.log('connecting to Device:', device.name);
+
+    try
+    {
+      const conn_device = await device.connect();
+
+      setConnectedDevice(conn_device);
+      setIsConnected(true);
+
+      await conn_device.discoverAllServicesAndCharacteristics();
+
+      BLTManager.onDeviceDisconnected(device.id, async(error, device) => {
+        
+        console.log('Device DC');
+        setIsConnected(false);
+        setConnectedDevice(undefined);
+
+      });
+
+      //Read inital values
+
+      //Message
+      device.readCharacteristicForService(SERVICE_UUID, MESSAGE_UUID)
+        .then(valenc => {
+          setMessage(base64.decode(valenc.value || "No value").replace("Â",""));
+        });
+
+        //RPM
+        device.readCharacteristicForService(SERVICE_UUID, RPM_UUID)
+          .then(valenc => {
+            
+            let rpm_value = parseInt(base64.decode(valenc.value || "No value"));
+
+            if(rpm_value)
+            {
+              setRPM(rpm_value);
+            }
+
+          });
+
+      //monitor values and tell what to do when receiving an update
+      //Sometimes Temp value comes with some string errors, ex:.replace("Â",""), so remove them
+
+      //Message
+      device.monitorCharacteristicForService(
+        SERVICE_UUID,
+        MESSAGE_UUID,
+
+        (error, characteristic) => {
+
+          if (characteristic?.value != null) {
+            
+            setMessage(base64.decode(characteristic?.value).replace("Â",""));
+            
+            console.log(
+              'Message update received: ',
+              base64.decode(characteristic?.value),
+            );
+          }
+        },
+        'messagetransaction',
+      );
+
+      console.log('Connection established');
+
+    }catch(conn_error)
+    {
+      console.error('Failed to connect: ', conn_error);
+      setIsConnected(false);
+    }
+  }
+
   return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
+    <View>
+      <View style={{paddingBottom: 100}}></View>
+
+      {/* Title */}
+      <View style={styles.rowView}>
+        <Text style={styles.titleText}>FAN PROJECT</Text>
+      </View>
+
+      <View style={{paddingBottom: 20}}></View>
+
+      {/* Monitored Value */}
+
+      <View style={styles.rowView}>
+        <Text style={styles.baseText}>{message}</Text>
+      </View>
+
+      <View style={{paddingBottom: 20}}></View>
+
+      {isConnected ? 
+        <View style={styles.rowView}>
+          <VerticalSlider
+          value={rpm}
+          disabled={false}
+          min={0}
+          max={1500}
+          onComplete={(value: number) => {
+            sendRPMValue(value);
+            setRPM(value);
+            console.log("COMPLETE", value);
+          }}
+          width={50}
+          height={300}
+          step={50}
+          borderRadius={5}
+          minimumTrackTintColor={"gray"}
+          maximumTrackTintColor={"tomato"}
+          showBallIndicator
+          ballIndicatorColor={"gray"}
+          ballIndicatorTextColor={"white"}
+          />
+        </View>
+      
+      :
+        null
+      }
+
+      <View style={{paddingBottom: 20}}></View>
+
+      {/* Connect Button */}
+      <View style={styles.rowView}>
+        <TouchableOpacity style={{width: 120}}>
+          {!isConnected ? (
+            <Button
+              title="Connect"
+              onPress={() => {
+                scanDevices();
+              }}
+              disabled={false}
+            />
+          ) : (
+            <Button
+              title="Disonnect"
+              onPress={() => {
+                disconnectDevice();
+              }}
+              disabled={false}
+            />
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <View style={{paddingBottom: 20}}></View>
     </View>
   );
 }
-
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
-  };
-
-  return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
-      />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
-  },
-});
-
-export default App;
