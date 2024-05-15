@@ -67,10 +67,10 @@ BLEServer *pServer = NULL;
 BLECharacteristic *message_characteristic = NULL;
 BLECharacteristic *rpm_characteristic = NULL;
 
-#define SERVICE_UUID "f158a25a-f800-41af-9193-e80ef1a1d3e7"
+#define SERVICE_UUID ""
 
-#define MESSAGE_CHARACTERISTIC_UUID "7b8d3c84-0efa-405d-9f9d-6d1b73fea6d6"
-#define RPM_CHARACTERISTIC_UUID "dedf926b-600b-4dad-815a-1364e9dd0422"
+#define MESSAGE_CHARACTERISTIC_UUID ""
+#define RPM_CHARACTERISTIC_UUID ""
 
 
 std::string getString(double number, int precision = 1)
