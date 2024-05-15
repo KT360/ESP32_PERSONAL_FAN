@@ -41,10 +41,10 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 DHT dht(DHTPIN, DHTTYPE);
 
-String URL = "http://192.168.2.38:8080/temp_sensor/post_data.php";
+String URL = "http://Path/temp_sensor/post_data.php";
 
-const char* ssid = "BELL132";
-const char* password = "499FE7FF4329";
+const char* ssid = "";
+const char* password = "";
 
 float temperature;
 float humidity;
