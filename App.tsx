@@ -20,10 +20,10 @@ LogBox.ignoreAllLogs(); //Ignore all log notifications
 
 const BLTManager = new BleManager();
 
-const SERVICE_UUID = 'f158a25a-f800-41af-9193-e80ef1a1d3e7';
+const SERVICE_UUID = '';
 
-const MESSAGE_UUID = '7b8d3c84-0efa-405d-9f9d-6d1b73fea6d6';
-const RPM_UUID = 'dedf926b-600b-4dad-815a-1364e9dd0422';
+const MESSAGE_UUID = '';
+const RPM_UUID = '';
 
 //TODO: COMMENTS
 
